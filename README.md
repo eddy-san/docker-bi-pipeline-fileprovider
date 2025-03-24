@@ -91,7 +91,7 @@ sudo ./fix-iptables-conntrack.sh
 
 1. Make sure your **subdomains** (e.g. `jupyter.your-domain.com`, `airflow.your-domain.com`) point to your **server’s public IP** in your DNS settings.  
 2. Rename the file `.env.example` to `.env` and **enter secure, production-ready passwords**.  
-3. Enter a **bcrypt hashed, production-ready password** in `traefik/dynamic/traefik_auth_users`.  
+3. Rename the file `traefik/dynamic/traefik_auth_users.example` to `traefik/dynamic/traefik_auth_users` and **enter secure, bcrypt-hashed, production-ready password**  
 4. Then launch the full stack:
 
 ```bash
@@ -104,6 +104,7 @@ docker-compose up -d
 
 - Ports 80/443 are handled by Traefik only.
 - Services are routed based on subdomains using static file-based rules.
+- The file `traefik_auth_users.example` contains a default hash for `admin:admin123`. **Do not use in production!** Replace it with a secure bcrypt hash.
 - This setup is intended as a secure base for extensible BI and ML environments.
 
 ---
