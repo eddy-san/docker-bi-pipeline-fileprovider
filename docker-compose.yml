@@ -1,0 +1,151 @@
+version: "3.8"
+
+services:
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    restart: always
+    command:
+      - "--api.dashboard=true"
+      - "--providers.file.directory=/traefik/dynamic"
+      - "--providers.file.watch=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.email=${EMAIL_LETSENCRYPT}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--serverstransport.insecureSkipVerify=false"  # Verhindert SSL-Warnungen
+      - "--global.sendAnonymousUsage=false"  # Verhindert, dass Traefik Telemetrie sendet
+      - "--accesslog=true"
+      - "--accesslog.filepath=/logs/access.log"
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - traefik_default
+    env_file:
+      - .env
+    volumes:
+      - "./traefik/dynamic:/traefik/dynamic:ro"
+      - "./traefik/letsencrypt:/letsencrypt"
+      - "./logs:/logs"
+
+  # 🔹 PostgreSQL als Hauptdatenbank
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - traefik_default
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # 🔹 ClickHouse für OLAP-Abfragen
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    container_name: clickhouse
+    restart: always
+    environment:
+      CLICKHOUSE_DB: "ssd_analytics"
+    networks:
+      - traefik_default
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+  # 🔹 Airflow Webserver & Scheduler
+  airflow:
+    image: apache/airflow:2.6.3
+    container_name: airflow
+    restart: always
+    depends_on:
+      - postgres
+      - clickhouse
+    environment:
+      - LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+    networks:
+      - traefik_default
+    command: >
+      bash -c "airflow db init &&
+      airflow users create --username ${AIRFLOW_USER} --password ${AIRFLOW_PASSWORD} --firstname Admin --lastname User --role Admin --email ${EMAIL_LETSENCRYPT} &&
+      airflow standalone"
+
+  # 🔹 Metabase für OLAP-Analysen & Dashboards
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
+    restart: always
+    depends_on:
+      - postgres
+      - clickhouse
+    networks:
+      - traefik_default
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: ${POSTGRES_DB}
+      MB_DB_HOST: postgres
+    MB_DB_USER: ${POSTGRES_USER}
+      MB_DB_PASS: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./metabase-data:/metabase-data
+
+
+  # 🔹 pgAdmin für PostgreSQL-Administration
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    networks:
+      - traefik_default
+    depends_on:
+      - postgres
+
+  # 🔹 Jupyter Notebook für Machine Learning
+  jupyter:
+    image: jupyter/tensorflow-notebook
+    container_name: jupyter
+    restart: always
+    environment:
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN}
+      JUPYTER_PASSWORD: ${JUPYTER_PASSWORD}
+    volumes:
+      - ./jupyter:/home/jovyan/work
+    networks:
+      - traefik_default
+    command: >
+      start-notebook.sh --NotebookApp.token='' --NotebookApp.password="${JUPYTER_HASH_PASSWORD}"
+
+  mediawiki:
+    image: mediawiki
+    container_name: mediawiki
+    restart: always
+    networks:
+      - traefik_default  # Traefik-Netzwerk
+    environment:
+      MEDIAWIKI_DB_TYPE: "sqlite"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - mediawiki_data:/var/www/html
+      - mediawiki_db:/var/www/data
+
+networks:
+  traefik_default:
+    external: true
+
+volumes:
+  postgres_data:
+  clickhouse_data:
+  metabase_data:
+  mediawiki_data:
+  mediawiki_db:

@@ -1,0 +1,118 @@
+http:
+  routers:
+    traefik:
+      rule: "Host(`traefik.your-domain.com`)"
+      service: "api@internal"
+      entryPoints:
+        - "websecure"
+      middlewares:
+        - "traefik-auth-secure"
+      tls:
+        certResolver: "letsencrypt"
+
+    airflow:
+      rule: "Host(`airflow.your-domain.com`)"
+      service: "airflow"
+      entryPoints:
+        - "websecure"
+      middlewares:
+        - "traefik-auth-secure"
+        - "rate-limit"
+      tls:
+        certResolver: "letsencrypt"
+
+    metabase:
+      rule: "Host(`metabase.your-domain.com`)"
+      service: "metabase"
+      middlewares:
+        - "rate-limit"
+      entryPoints:
+        - "websecure"
+      tls:
+        certResolver: "letsencrypt"
+
+    pgadmin:
+      rule: "Host(`pgadmin.your-domain.com`)"
+      service: "pgadmin"
+      middlewares:
+        - "rate-limit"
+      entryPoints:
+        - "websecure"
+      tls:
+        certResolver: "letsencrypt"
+
+    jupyter:
+      rule: "Host(`jupyter.your-domain.com`)"
+      service: "jupyter"
+      middlewares:
+        - "traefik-auth-secure"
+        - "rate-limit"
+      entryPoints:
+        - "websecure"
+      tls:
+        certResolver: "letsencrypt"
+
+    mediawiki:
+      rule: "Host(`wiki.your-domain.com`)"
+      service: "mediawiki"
+      entryPoints:
+        - "websecure"
+      tls:
+        certResolver: "letsencrypt"
+  middlewares:
+    # kifeart
+    traefik-auth:
+      basicAuth:
+        usersFile: "/traefik/dynamic/traefik_auth_users"
+
+    traefik-auth-secure:
+      chain:
+        middlewares:
+          - traefik-auth
+          - remove-server-header
+
+    rate-limit:
+      rateLimit:
+        average: 50
+        burst: 100
+        period: 1s
+
+    remove-server-header:
+      headers:
+        frameDeny: true
+        sslRedirect: true
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        customResponseHeaders:
+          Server: ""
+          X-Powered-By: ""
+          X-Traefik-Server: ""
+
+  services:
+    airflow:
+      loadBalancer:
+        servers:
+          - url: "http://airflow:8080"
+
+    metabase:
+      loadBalancer:
+        servers:
+          - url: "http://metabase:3000"
+
+    pgadmin:
+      loadBalancer:
+        servers:
+          - url: "http://pgadmin:80"
+
+    jupyter:
+      loadBalancer:
+        servers:
+          - url: "http://jupyter:8888"
+
+    mediawiki:
+      loadBalancer:
+        servers:
+          - url: "http://mediawiki:80"
